@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+<meta name="theme-color" content="#fffaf0" />
+<title>ぬりえ</title>
+<link href="https://fonts.googleapis.com/css2?family=Mochiy+Pop+P+One&family=Kosugi+Maru&display=swap" rel="stylesheet"/>
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+body {
+  font-family: "Kosugi Maru", system-ui, sans-serif;
+  color: #3a2a1c;
+  background: linear-gradient(180deg, #fff8e0, #ffe5d8);
+  touch-action: manipulation; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#app {
+  display: flex; flex-direction: column;
+  height: 100dvh; padding: 10px 14px; gap: 8px;
+  max-width: 480px; margin: 0 auto;
+}
+header { display: flex; justify-content: space-between; align-items: center; }
+.title {
+  font-family: "Mochiy Pop P One", sans-serif;
+  font-size: 22px; color: #ff5577;
+  -webkit-text-stroke: 2.5px #fff; paint-order: stroke fill;
+  text-shadow: 3px 3px 0 #3a2a1c, 5px 5px 0 #ffd56b;
+  margin: 0; transform: rotate(-2deg);
+}
+.icon-btn {
+  background: #fff; border: 2.5px solid #3a2a1c; color: #3a2a1c;
+  padding: 5px 10px; border-radius: 999px; font-size: 13px; font-weight: 900; cursor: pointer;
+  box-shadow: 2px 2px 0 #3a2a1c;
+}
+
+.canvas-wrap {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  min-height: 0;
+  background: #fff;
+  border: 3px solid #3a2a1c; border-radius: 14px;
+  box-shadow: 3px 3px 0 #3a2a1c;
+  position: relative;
+  overflow: hidden;
+}
+#art { width: 100%; height: 100%; display: block; }
+#art .region { cursor: pointer; transition: fill 0.1s; }
+
+.picker {
+  display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px;
+  padding: 4px;
+}
+.swatch {
+  aspect-ratio: 1;
+  border: 2.5px solid #3a2a1c;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 #3a2a1c;
+}
+.swatch.on { transform: scale(1.15); box-shadow: 2px 2px 0 #3a2a1c, 0 0 0 3px #ffd56b; }
+.swatch.eraser { background: #fff; position: relative; }
+.swatch.eraser::after {
+  content: '✕'; position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  color: #c0a090; font-size: 20px;
+}
+
+.tools {
+  display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px;
+}
+.tools button {
+  background: #fff; border: 2.5px solid #3a2a1c; color: #3a2a1c;
+  padding: 8px; border-radius: 12px;
+  font-family: "Mochiy Pop P One", sans-serif; font-size: 12px;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 #3a2a1c;
+}
+.tools button:active { transform: translate(2px, 2px); box-shadow: 0 0 0 #3a2a1c; }
+.picture-row {
+  display: flex; gap: 4px; overflow-x: auto;
+  padding: 2px;
+}
+.picture-row::-webkit-scrollbar { display: none; }
+.pic-btn {
+  flex: 0 0 auto;
+  background: #fff; border: 2px solid #3a2a1c;
+  border-radius: 10px; padding: 4px;
+  cursor: pointer; box-shadow: 2px 2px 0 #3a2a1c;
+}
+.pic-btn.on { background: #ffe066; }
+.pic-btn svg { width: 36px; height: 36px; display: block; }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 24px; left: 50%;
+  transform: translate(-50%, 30px);
+  background: #3a2a1c; color: #fff;
+  padding: 8px 16px; border-radius: 999px;
+  font-size: 13px; opacity: 0; transition: 0.25s;
+  z-index: 200;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1 class="title">ぬりえ</h1>
+    <div style="display:flex; gap:5px;">
+      <button class="icon-btn" id="btn-clear">↺</button>
+      <button class="icon-btn" id="btn-share">🔗</button>
+    </div>
+  </header>
+
+  <div class="picture-row" id="pic-row"></div>
+
+  <div class="canvas-wrap">
+    <svg id="art" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <div class="picker" id="picker"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  'use strict';
+  const SHARE_URL = 'https://maxtakaharu34-cmd.github.io/nurie-jp/';
+  const COLORS = [
+    '#ff5577', '#ffb84d', '#ffe066', '#a3e635',
+    '#5dd6a8', '#5ab8ff', '#a874e0', '#ff8aaa',
+    '#3a2a1c', '#8a5a3b', '#ffffff', '#ffd6a5',
+    '#000000', '#c0c0c0', '#ffafcc', '#bde0fe'
+  ];
+
+  // SVG line-art pictures: each region path will be tappable
+  // r-id allows region grouping (different parts that should fill together).
+  const PICTURES = [
+    {
+      id: 'butterfly', label: '🦋', regions: [
+        { id: 'wing-tl', d: 'M 100 100 L 60 50 Q 30 60 35 100 Q 50 110 100 100 Z' },
+        { id: 'wing-tr', d: 'M 100 100 L 140 50 Q 170 60 165 100 Q 150 110 100 100 Z' },
+        { id: 'wing-bl', d: 'M 100 100 L 65 145 Q 50 155 60 130 Q 80 115 100 100 Z' },
+        { id: 'wing-br', d: 'M 100 100 L 135 145 Q 150 155 140 130 Q 120 115 100 100 Z' },
+        { id: 'body',   d: 'M 100 60 Q 95 100 100 150 Q 105 100 100 60 Z' },
+        { id: 'spot1',  d: 'M 70 70 a 5 5 0 1 0 10 0 a 5 5 0 1 0 -10 0' },
+        { id: 'spot2',  d: 'M 120 70 a 5 5 0 1 0 10 0 a 5 5 0 1 0 -10 0' }
+      ]
+    },
+    {
+      id: 'cat', label: '🐱', regions: [
+        { id: 'head',  d: 'M 100 100 m -45 0 a 45 42 0 1 0 90 0 a 45 42 0 1 0 -90 0' },
+        { id: 'earL',  d: 'M 60 65 L 65 30 L 90 60 Z' },
+        { id: 'earR',  d: 'M 140 65 L 135 30 L 110 60 Z' },
+        { id: 'eyeL',  d: 'M 80 95 a 6 8 0 1 0 12 0 a 6 8 0 1 0 -12 0' },
+        { id: 'eyeR',  d: 'M 108 95 a 6 8 0 1 0 12 0 a 6 8 0 1 0 -12 0' },
+        { id: 'nose',  d: 'M 95 115 L 105 115 L 100 122 Z' },
+        { id: 'mouth', d: 'M 100 122 Q 90 130 85 125 M 100 122 Q 110 130 115 125' },
+        { id: 'cheekL',d: 'M 70 115 a 4 3 0 1 0 8 0 a 4 3 0 1 0 -8 0' },
+        { id: 'cheekR',d: 'M 122 115 a 4 3 0 1 0 8 0 a 4 3 0 1 0 -8 0' }
+      ]
+    },
+    {
+      id: 'flower', label: '🌸', regions: [
+        { id: 'pet1', d: 'M 100 100 m 0 -45 a 18 26 0 1 0 0.1 0 Z' },
+        { id: 'pet2', d: 'M 100 100 L 138 73 a 18 26 -36 1 0 -16 -22 Z' },
+        { id: 'pet3', d: 'M 100 100 L 145 115 a 18 26 -72 1 0 -22 16 Z' },
+        { id: 'pet4', d: 'M 100 100 L 122 145 a 18 26 -108 1 0 -22 -16 Z' },
+        { id: 'pet5', d: 'M 100 100 L 78 145 a 18 26 -144 1 0 22 -16 Z' },
+        { id: 'center', d: 'M 100 100 m -10 0 a 10 10 0 1 0 20 0 a 10 10 0 1 0 -20 0' },
+        { id: 'leaf', d: 'M 100 145 Q 130 160 145 175 Q 130 165 100 165 Z' },
+        { id: 'stem', d: 'M 100 145 L 100 195' }
+      ]
+    },
+    {
+      id: 'house', label: '🏠', regions: [
+        { id: 'roof',  d: 'M 30 100 L 100 40 L 170 100 Z' },
+        { id: 'wall',  d: 'M 50 100 L 50 170 L 150 170 L 150 100 Z' },
+        { id: 'door',  d: 'M 90 130 L 90 170 L 110 170 L 110 130 Z' },
+        { id: 'winL',  d: 'M 60 110 L 60 130 L 80 130 L 80 110 Z' },
+        { id: 'winR',  d: 'M 120 110 L 120 130 L 140 130 L 140 110 Z' },
+        { id: 'sun',   d: 'M 165 30 m -12 0 a 12 12 0 1 0 24 0 a 12 12 0 1 0 -24 0' },
+        { id: 'tree',  d: 'M 25 130 m -8 0 a 12 14 0 1 0 16 0 a 12 14 0 1 0 -16 0' }
+      ]
+    },
+    {
+      id: 'fish', label: '🐠', regions: [
+        { id: 'body', d: 'M 60 100 Q 90 60 130 100 Q 90 140 60 100 Z' },
+        { id: 'tail', d: 'M 130 100 L 165 75 L 160 100 L 165 125 Z' },
+        { id: 'fin',  d: 'M 95 100 L 90 75 L 100 95 Z' },
+        { id: 'eye',  d: 'M 78 90 a 4 4 0 1 0 8 0 a 4 4 0 1 0 -8 0' },
+        { id: 'stripe1', d: 'M 75 110 Q 95 100 75 90' },
+        { id: 'stripe2', d: 'M 105 115 Q 110 100 100 85' },
+        { id: 'bubble', d: 'M 50 60 a 6 6 0 1 0 12 0 a 6 6 0 1 0 -12 0' }
+      ]
+    },
+    {
+      id: 'car', label: '🚗', regions: [
+        { id: 'body',  d: 'M 25 130 L 35 110 Q 60 90 100 90 Q 130 90 145 110 L 175 130 L 175 145 L 25 145 Z' },
+        { id: 'window',d: 'M 45 110 Q 70 95 100 95 Q 130 95 145 110 L 145 125 L 45 125 Z' },
+        { id: 'wheelL',d: 'M 60 145 m -12 0 a 12 12 0 1 0 24 0 a 12 12 0 1 0 -24 0' },
+        { id: 'wheelR',d: 'M 140 145 m -12 0 a 12 12 0 1 0 24 0 a 12 12 0 1 0 -24 0' },
+        { id: 'light', d: 'M 28 122 L 38 122 L 38 130 L 28 130 Z' },
+        { id: 'door',  d: 'M 100 95 L 100 145' }
+      ]
+    }
+  ];
+
+  const $ = (id) => document.getElementById(id);
+  const art = $('art');
+  const picker = $('picker');
+  const picRow = $('pic-row');
+  const toastEl = $('toast');
+  let selected = COLORS[0];
+  let currentPicId = PICTURES[0].id;
+
+  function showToast(text) {
+    toastEl.textContent = text;
+    toastEl.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toastEl.classList.remove('show'), 1200);
+  }
+
+  function buildPicker() {
+    while (picker.firstChild) picker.removeChild(picker.firstChild);
+    // eraser first
+    const er = document.createElement('button');
+    er.className = 'swatch eraser' + (selected === '__erase' ? ' on' : '');
+    er.title = 'けしゴム';
+    er.addEventListener('click', () => { selected = '__erase'; buildPicker(); });
+    picker.appendChild(er);
+    for (const c of COLORS) {
+      const b = document.createElement('button');
+      b.className = 'swatch' + (selected === c ? ' on' : '');
+      b.style.background = c;
+      b.style.borderColor = c === '#ffffff' ? '#3a2a1c' : '#3a2a1c';
+      b.addEventListener('click', () => { selected = c; buildPicker(); });
+      picker.appendChild(b);
+    }
+  }
+
+  function buildPicRow() {
+    while (picRow.firstChild) picRow.removeChild(picRow.firstChild);
+    for (const p of PICTURES) {
+      const b = document.createElement('button');
+      b.className = 'pic-btn' + (p.id === currentPicId ? ' on' : '');
+      b.title = p.label;
+      // Mini SVG preview using same regions but uncolored
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 200 200');
+      for (const r of p.regions) {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', r.d);
+        path.setAttribute('fill', '#fff');
+        path.setAttribute('stroke', '#3a2a1c');
+        path.setAttribute('stroke-width', '4');
+        path.setAttribute('stroke-linejoin', 'round');
+        svg.appendChild(path);
+      }
+      b.appendChild(svg);
+      b.addEventListener('click', () => { loadPicture(p.id); });
+      picRow.appendChild(b);
+    }
+  }
+
+  function loadPicture(id) {
+    currentPicId = id;
+    const pic = PICTURES.find((p) => p.id === id);
+    while (art.firstChild) art.removeChild(art.firstChild);
+    for (const r of pic.regions) {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', r.d);
+      path.setAttribute('fill', '#ffffff');
+      path.setAttribute('stroke', '#3a2a1c');
+      path.setAttribute('stroke-width', '3');
+      path.setAttribute('stroke-linecap', 'round');
+      path.setAttribute('stroke-linejoin', 'round');
+      path.classList.add('region');
+      path.dataset.rid = r.id;
+      path.addEventListener('click', () => paint(path));
+      // Allow mouse drag fill
+      path.addEventListener('mouseenter', (e) => {
+        if (e.buttons === 1) paint(path);
+      });
+      art.appendChild(path);
+    }
+    buildPicRow();
+  }
+  function paint(el) {
+    el.setAttribute('fill', selected === '__erase' ? '#ffffff' : selected);
+  }
+
+  $('btn-clear').addEventListener('click', () => {
+    if (!confirm('全部白にもどしますか？')) return;
+    document.querySelectorAll('#art .region').forEach((p) => p.setAttribute('fill', '#ffffff'));
+    showToast('まっさらになりました');
+  });
+  $('btn-share').addEventListener('click', () => {
+    const txt = `${PICTURES.find((p) => p.id === currentPicId)?.label || ''} ぬりえできた！ #ぬりえ`;
+    const url = `https://x.com/intent/post?text=${encodeURIComponent(txt)}&url=${encodeURIComponent(SHARE_URL)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  });
+
+  buildPicker();
+  loadPicture('butterfly');
+})();
+</script>
+</body>
+</html>
